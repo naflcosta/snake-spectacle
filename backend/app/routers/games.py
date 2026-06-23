@@ -1,7 +1,9 @@
 
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..database import get_db
 from ..models import ActiveGame, ErrorResponse, GameState, User
 from .. import store
 
@@ -13,8 +15,8 @@ router = APIRouter(prefix="/games", tags=["game", "spectator"])
     response_model=list[ActiveGame],
     tags=["spectator"],
 )
-def list_active_games() -> list[ActiveGame]:
-    return store.list_active_games()
+def list_active_games(db: Session = Depends(get_db)) -> list[ActiveGame]:
+    return store.list_active_games(db)
 
 
 @router.put(
@@ -26,8 +28,9 @@ def list_active_games() -> list[ActiveGame]:
 def publish_game(
     body: GameState,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ActiveGame:
-    return store.upsert_active_game(current_user, body)
+    return store.upsert_active_game(db, current_user, body)
 
 
 @router.delete(
@@ -36,5 +39,8 @@ def publish_game(
     responses={401: {"model": ErrorResponse}},
     tags=["game"],
 )
-def end_game(current_user: User = Depends(get_current_user)) -> None:
-    store.remove_active_game(current_user.id)
+def end_game(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    store.remove_active_game(db, current_user.id)

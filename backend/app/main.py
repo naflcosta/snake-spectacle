@@ -1,11 +1,24 @@
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .database import Base, SessionLocal, engine
 from .routers import auth, games, scores
+from . import store
 
-app = FastAPI(title="Snake Spectacle API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        store.seed(db)
+    yield
+
+
+app = FastAPI(title="Snake Spectacle API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,24 +1,40 @@
-"""Shared fixtures — each test gets a clean in-memory store."""
+"""Shared fixtures — each test gets a fresh in-memory SQLite database."""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app import store as _store
+from app.database import Base, get_db
 from app.main import app
 
 
-def _reset_store() -> None:
-    _store._users.clear()
-    _store._usernames.clear()
-    _store._tokens.clear()
-    _store._scores.clear()
-    _store._active_games.clear()
+def _make_test_db():
+    # StaticPool ensures all sessions share the same in-memory connection
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 @pytest.fixture()
 def client() -> TestClient:
-    _reset_store()
-    return TestClient(app, raise_server_exceptions=True)
+    SessionLocal = _make_test_db()
+
+    def override_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield TestClient(app, raise_server_exceptions=True)
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture()
