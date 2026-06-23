@@ -43,8 +43,8 @@ describe("MockGameService", () => {
     await svc.submitScore("walls", 5);
     await svc.submitScore("walls", 20);
     await svc.submitScore("wrap", 100);
-    const walls = await svc.getLeaderboard("walls", 10);
-    const wrap = await svc.getLeaderboard("wrap", 10);
+    const walls = await svc.getLeaderboard("walls", 100);
+    const wrap = await svc.getLeaderboard("wrap", 100);
     const wallsMine = walls.filter((s) => s.username === "scorer");
     expect(wallsMine[0].score).toBe(20);
     expect(wallsMine[1].score).toBe(5);
