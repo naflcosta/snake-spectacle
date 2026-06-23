@@ -11,6 +11,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -77,21 +80,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Snake Arena" },
+      { name: "description", content: "Multiplayer-ready Snake game with leaderboards and live spectating." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Snake Arena" },
+      { property: "og:description", content: "Play Snake, climb the leaderboard, watch other players live." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-    ],
+    links: [{ rel: "stylesheet", href: appCss }],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -113,13 +110,54 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function Nav() {
+  const { user, logout } = useAuth();
+  return (
+    <header className="border-b border-border bg-card/40 backdrop-blur sticky top-0 z-10">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <Link to="/" className="flex items-center gap-2 font-bold text-lg">
+          <span className="inline-block h-5 w-5 rounded-sm bg-primary" />
+          Snake Arena
+        </Link>
+        <nav className="flex items-center gap-1">
+          <Link to="/play" className="px-3 py-1.5 text-sm rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 text-sm rounded-md bg-accent" }}>
+            Play
+          </Link>
+          <Link to="/leaderboard" className="px-3 py-1.5 text-sm rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 text-sm rounded-md bg-accent" }}>
+            Leaderboard
+          </Link>
+          <Link to="/spectate" className="px-3 py-1.5 text-sm rounded-md hover:bg-accent" activeProps={{ className: "px-3 py-1.5 text-sm rounded-md bg-accent" }}>
+            Spectate
+          </Link>
+          {user ? (
+            <div className="ml-2 flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">@{user.username}</span>
+              <Button size="sm" variant="outline" onClick={() => void logout()}>
+                Logout
+              </Button>
+            </div>
+          ) : (
+            <Link to="/auth" className="ml-2">
+              <Button size="sm">Log in</Button>
+            </Link>
+          )}
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <AuthProvider>
+        <div className="min-h-screen bg-background text-foreground">
+          <Nav />
+          <Outlet />
+          <Toaster richColors position="top-right" />
+        </div>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
