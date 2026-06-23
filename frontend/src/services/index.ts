@@ -1,11 +1,11 @@
 // Single entry point: swap MockGameService for a real backend impl here.
 import type { GameService } from "@/services/GameService";
-import { MockGameService } from "@/services/MockGameService";
+import { ApiGameService } from "@/services/ApiGameService";
 
 let instance: GameService | null = null;
 
 export function getGameService(): GameService {
-  if (!instance) instance = new MockGameService();
+  if (!instance) instance = new ApiGameService();
   return instance;
 }
 
