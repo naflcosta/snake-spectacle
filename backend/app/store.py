@@ -1,5 +1,4 @@
 """In-memory store for users, scores, and active games."""
-from __future__ import annotations
 
 import time
 import uuid

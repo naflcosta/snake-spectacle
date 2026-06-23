@@ -1,5 +1,4 @@
 """Shared fixtures — each test gets a clean in-memory store."""
-from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
