@@ -25,4 +25,4 @@ frontend-tests:
 test: backend-tests frontend-tests
 
 test-integration:
-    cd backend && uv run pytest tests_integration/
+	cd backend && uv run pytest tests_integration/
