@@ -23,3 +23,6 @@ frontend-tests:
 	cd frontend && npm run test
 
 test: backend-tests frontend-tests
+
+test-integration:
+    cd backend && uv run pytest tests_integration/
