@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getGameService } from "@/services";
 import type { ActiveGame } from "@/services/types";
 
-export const Route = createFileRoute("/spectate")({
+export const Route = createFileRoute("/spectate/")({
   head: () => ({
     meta: [
       { title: "Spectate live games — Snake Arena" },
