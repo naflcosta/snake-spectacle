@@ -1,0 +1,498 @@
+openapi: "3.1.0"
+
+info:
+  title: Snake Spectacle API
+  version: "1.0.0"
+  description: |
+    Backend API for Snake Spectacle — a multiplayer snake game with real-time
+    spectator mode.
+
+    ## Authentication
+    Protected endpoints require a Bearer JWT in the `Authorization` header,
+    obtained from `POST /auth/signup` or `POST /auth/login`.
+
+    ## Real-time
+    Two endpoints stream live spectator data via Server-Sent Events (SSE):
+    - `GET /games/active/stream` — full active-games list on any change
+    - `GET /games/active/{userId}/stream` — single player's state on every tick
+
+    ## Mapping to GameService interface
+    | GameService method       | HTTP endpoint                          |
+    |--------------------------|----------------------------------------|
+    | signup                   | POST /auth/signup                      |
+    | login                    | POST /auth/login                       |
+    | logout                   | POST /auth/logout                      |
+    | getCurrentUser           | GET /auth/me                           |
+    | submitScore              | POST /scores                           |
+    | getLeaderboard           | GET /leaderboard                       |
+    | publishGame              | PUT /games/active                      |
+    | endGame                  | DELETE /games/active                   |
+    | listActiveGames          | GET /games/active                      |
+    | onActiveGamesChange      | GET /games/active/stream (SSE)         |
+    | watchGame                | GET /games/active/{userId}/stream (SSE)|
+
+servers:
+  - url: /api
+    description: API base path
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+security: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+    GameMode:
+      type: string
+      enum: [walls, wrap]
+      description: >
+        walls — snake dies on wall collision;
+        wrap — snake teleports to the opposite edge
+
+    Direction:
+      type: string
+      enum: [up, down, left, right]
+
+    Point:
+      type: object
+      required: [x, y]
+      properties:
+        x:
+          type: integer
+          minimum: 0
+          maximum: 23   # GRID_W - 1
+        y:
+          type: integer
+          minimum: 0
+          maximum: 23   # GRID_H - 1
+
+    GameState:
+      type: object
+      required: [snake, food, direction, mode, score, alive, tick]
+      properties:
+        snake:
+          type: array
+          items:
+            $ref: '#/components/schemas/Point'
+          minItems: 1
+          description: Ordered body segments, head at index 0
+        food:
+          $ref: '#/components/schemas/Point'
+        direction:
+          $ref: '#/components/schemas/Direction'
+        mode:
+          $ref: '#/components/schemas/GameMode'
+        score:
+          type: integer
+          minimum: 0
+        alive:
+          type: boolean
+        tick:
+          type: integer
+          minimum: 0
+          description: Monotonically increasing tick counter for the current game
+
+    User:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      description: Returned by signup and login; the token must be sent as a Bearer header on protected requests
+      properties:
+        token:
+          type: string
+          description: JWT; include as `Authorization: Bearer <token>`
+        user:
+          $ref: '#/components/schemas/User'
+
+    ScoreEntry:
+      type: object
+      required: [id, userId, username, mode, score, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        username:
+          type: string
+        mode:
+          $ref: '#/components/schemas/GameMode'
+        score:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: integer
+          description: Unix timestamp in milliseconds
+
+    ActiveGame:
+      type: object
+      required: [userId, username, mode, state, updatedAt]
+      properties:
+        userId:
+          type: string
+        username:
+          type: string
+        mode:
+          $ref: '#/components/schemas/GameMode'
+        state:
+          $ref: '#/components/schemas/GameState'
+        updatedAt:
+          type: integer
+          description: Unix timestamp in milliseconds
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+
+  /auth/signup:
+    post:
+      summary: Register a new user
+      operationId: signup
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 2
+                password:
+                  type: string
+                  minLength: 3
+      responses:
+        '201':
+          description: User created; session token included
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          description: Username already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error (username < 2 chars or password < 3 chars)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      summary: Log in and receive a session token
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      summary: Invalidate the current session and remove the player's active game
+      operationId: logout
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      summary: Return the currently authenticated user
+      operationId: getCurrentUser
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Scores ────────────────────────────────────────────────────────────────
+
+  /scores:
+    post:
+      summary: Record a final score after game over
+      description: Only submitted when the player is authenticated; anonymous games are not recorded.
+      operationId: submitScore
+      tags: [scores]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, score]
+              properties:
+                mode:
+                  $ref: '#/components/schemas/GameMode'
+                score:
+                  type: integer
+                  minimum: 0
+      responses:
+        '201':
+          description: Score recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScoreEntry'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /leaderboard:
+    get:
+      summary: Get top scores for a game mode
+      description: Public — no authentication required. Sorted by score descending, then by createdAt ascending.
+      operationId: getLeaderboard
+      tags: [scores]
+      parameters:
+        - name: mode
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/GameMode'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Top scores ordered by rank
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScoreEntry'
+        '400':
+          description: Invalid or missing query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Active Games ──────────────────────────────────────────────────────────
+
+  /games/active:
+    get:
+      summary: List all currently active games
+      description: Public — no authentication required. Used to populate the spectate lobby.
+      operationId: listActiveGames
+      tags: [spectator]
+      responses:
+        '200':
+          description: All active games
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActiveGame'
+
+    put:
+      summary: Publish (upsert) the authenticated player's current game state
+      description: |
+        Called on every game tick (~110 ms) while the player is alive.
+        Creates or replaces the player's active game entry. The server derives
+        `userId`, `username`, and `updatedAt` from the auth token and server clock.
+      operationId: publishGame
+      tags: [game]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameState'
+      responses:
+        '200':
+          description: Active game entry updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveGame'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Remove the authenticated player's active game entry
+      description: Called when the game ends (`alive: false`) or the player navigates away.
+      operationId: endGame
+      tags: [game]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Active game removed (or was already absent)
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /games/active/stream:
+    get:
+      summary: Stream all active game changes via Server-Sent Events
+      description: |
+        SSE stream. Fires immediately with the current active-games snapshot,
+        then emits an event whenever any player's entry is created, updated,
+        or deleted. Data is the full current list (not a diff).
+
+        Event format:
+        ```
+        event: update
+        data: [{"userId":"abc","username":"alice","mode":"walls","state":{...},"updatedAt":1700000000000}]
+        ```
+      operationId: onActiveGamesChange
+      tags: [spectator]
+      responses:
+        '200':
+          description: SSE stream opened
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/event-stream
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /games/active/{userId}/stream:
+    get:
+      summary: Stream a single player's game state via Server-Sent Events
+      description: |
+        SSE stream for spectating one specific player. Fires immediately with
+        the player's current game (or `null` if not active), then on every
+        `publishGame` tick and when the game ends.
+
+        Update event:
+        ```
+        event: update
+        data: {"userId":"abc","username":"alice","mode":"walls","state":{...},"updatedAt":1700000000000}
+        ```
+        End-of-game event:
+        ```
+        event: update
+        data: null
+        ```
+      operationId: watchGame
+      tags: [spectator]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream opened
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/event-stream
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          description: No user with that ID exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
